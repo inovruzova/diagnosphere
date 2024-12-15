@@ -1,0 +1,49 @@
+{
+    "tables": {
+        "table": {
+            "columns": {
+                "Age": {
+                    "sdtype": "categorical"
+                },
+                "Gender": {
+                    "sdtype": "categorical"
+                },
+                "Occupation": {
+                    "sdtype": "categorical"
+                },
+                "Country": {
+                    "sdtype": "categorical"
+                },
+                "Mental_Health_Condition": {
+                    "sdtype": "categorical"
+                },
+                "Severity": {
+                    "sdtype": "categorical"
+                },
+                "Consultation_History": {
+                    "sdtype": "categorical"
+                },
+                "Stress_Level": {
+                    "sdtype": "categorical"
+                },
+                "Sleep_Hours": {
+                    "sdtype": "categorical"
+                },
+                "Work_Hours": {
+                    "sdtype": "categorical"
+                },
+                "Physical_Activity_Hours": {
+                    "sdtype": "categorical"
+                },
+                "Work_Stress_Index": {
+                    "sdtype": "categorical"
+                },
+                "Physical_Activity_Stress_Index": {
+                    "sdtype": "categorical"
+                }
+            }
+        }
+    },
+    "relationships": [],
+    "METADATA_SPEC_VERSION": "V1"
+}
