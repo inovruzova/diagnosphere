@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 import json
+import ast
 from bayes_net import BayesNet, MultiClassBayesNode, enumeration_ask, compute_cpt
 
 # Load Mental Health and COVID-19 data
@@ -10,6 +11,16 @@ covid_data = pd.read_csv('../data/covid_preprocessed.csv')
 
 # Set up the page layout and style
 st.set_page_config(page_title="🩺Diagnosphere", layout="wide", initial_sidebar_state="expanded")
+
+ # Convert CPTs back to proper structure
+def json_to_cpts(cpt_json):
+    return {
+        var: {
+            eval(parent_comb): {eval(k): v for k, v in target_probs.items()}
+            for parent_comb, target_probs in cpt.items()
+        }
+        for var, cpt in cpt_json.items()
+    }
 
 # Custom CSS for styling
 st.markdown("""
@@ -68,17 +79,27 @@ if st.session_state.page == "home":
     with col3:
         if st.button("Breast Cancer"):
             st.session_state.page = "breast_cancer"
-
+            
 # Mental Health Page
 elif st.session_state.page == "mental_health":
     st.header("Mental Health Assessment")
     st.write("Answer the following questions to get insights into your mental health.")
 
-    # Load mappings
-    with open('../Preprocessing/mental_label_mappings.json', 'r') as f:
-        mappings = json.load(f)
-    with open('../Preprocessing/mental_work_hours_bins.json', 'r') as f:
-        bin_edges = json.load(f)
+    # Load mappings and precomputed CPTs
+    try:
+        with open('../Preprocessing/mental_label_mappings.json', 'r') as f:
+            mappings = json.load(f)
+        with open('../Preprocessing/mental_work_hours_bins.json', 'r') as f:
+            bin_edges = json.load(f)
+        with open('../Modeling/mental_cpts.json', 'r') as f:
+            mental_cpts = json.load(f)
+    except FileNotFoundError as e:
+        st.error(f"File not found: {e}")
+    except json.JSONDecodeError as e:
+        st.error(f"Error decoding JSON: {e}")
+
+    # Convert CPTs back to proper structure
+    cpts = json_to_cpts(mental_cpts)
 
     # Collect user input
     age_raw = st.number_input("Enter your age", min_value=0, max_value=120, step=1)
@@ -102,18 +123,18 @@ elif st.session_state.page == "mental_health":
     else:
         work_hours = 'High'
 
-    for col in final_mental_data.columns:
-        final_mental_data[col] = final_mental_data[col].astype('category')
-
     # Map user input to encoded values
-    age_encoded = mappings["Age"][age]
-    gender_encoded = mappings["Gender"][gender]
-    occupation_encoded = mappings["Occupation"][occupation]
-    country_encoded = mappings["Country"][country]
-    consultation_history_encoded = mappings["Consultation_History"][consultation_history]
-    sleep_hours_encoded = mappings["Sleep_Hours"][sleep_hours]
-    work_hours_encoded = mappings["Work_Hours"][work_hours]
-    physical_activity_encoded = mappings["Physical_Activity_Hours"][physical_activity]
+    try:
+        age_encoded = mappings["Age"][age]
+        gender_encoded = mappings["Gender"][gender]
+        occupation_encoded = mappings["Occupation"][occupation]
+        country_encoded = mappings["Country"][country]
+        consultation_history_encoded = mappings["Consultation_History"][consultation_history]
+        sleep_hours_encoded = mappings["Sleep_Hours"][sleep_hours]
+        work_hours_encoded = mappings["Work_Hours"][work_hours]
+        physical_activity_encoded = mappings["Physical_Activity_Hours"][physical_activity]
+    except KeyError as e:
+        st.error(f"Mapping error: {e}")
 
     # Prepare the input data
     evidence = {
@@ -127,11 +148,27 @@ elif st.session_state.page == "mental_health":
         "Physical_Activity_Hours": physical_activity_encoded
     }
 
-    # Define Bayesian Network structure
-    cpt_mental_health = compute_cpt(final_mental_data, "Mental_Health_Condition", ["Physical_Activity_Hours", "Gender"])
-    mental_health_node = MultiClassBayesNode("Mental_Health_Condition", ["Physical_Activity_Hours", "Gender"], cpt_mental_health)
+    st.write("Evidence:", evidence)
 
-    mental_health_bn = BayesNet([mental_health_node])
+    # Define Bayesian Network structure using precomputed CPTs
+    try:
+        mental_health_node = MultiClassBayesNode("Mental_Health_Condition", ["Physical_Activity_Hours", "Gender"], cpts["cpt_mental_health"])
+        activity_node = MultiClassBayesNode("Physical_Activity_Hours", ["Country"], cpts["cpt_activity"])
+        gender_node = MultiClassBayesNode("Gender", ["Occupation"], cpts["cpt_gender"])
+        country_node = MultiClassBayesNode("Country", ["Age"], cpts["cpt_country"])
+        age_node = MultiClassBayesNode("Age", [], cpts["cpt_age"])
+        occupation_node = MultiClassBayesNode("Occupation", [], cpts["cpt_occupation"])
+
+        mental_health_bn = BayesNet([
+            age_node,
+            occupation_node,
+            gender_node,
+            country_node,
+            activity_node,
+            mental_health_node
+        ])
+    except KeyError as e:
+        st.error(f"CPT key error: {e}")
 
     if st.button("Get Result"):
         try:
@@ -148,49 +185,75 @@ elif st.session_state.page == "mental_health":
         except Exception as e:
             st.error(f"An error occurred during inference: {e}")
 
-# COVID-19 Page
+# COVID-19 Symptom Checker
 elif st.session_state.page == "covid_19":
     st.header("COVID-19 Symptom Checker")
-    st.write("Answer the following questions to check your COVID-19 classification risk.")
+    st.write("Answer the following questions to get insights into COVID-19 classification.")
+
+    # Load Precomputed CPTs
+    try:
+        with open("../Modeling/covid_cpts.json", "r") as f:
+            covid_cpts = json.load(f)
+    except FileNotFoundError as e:
+        st.error(f"File not found: {e}")
+    except json.JSONDecodeError as e:
+        st.error(f"Error decoding JSON: {e}")
+
+    # Convert back to proper structure
+    cpts = json_to_cpts(covid_cpts)
+
+    # Define Bayesian Network structure using precomputed CPTs
+    try:
+        classification_node = MultiClassBayesNode("CLASIFFICATION_FINAL", ['SEX', 'OBESITY', 'DIABETES', 'ICU'], cpts['cpt_classification'])
+        pneumonia_node = MultiClassBayesNode("PNEUMONIA", ["AGE_GROUP"], cpts['cpt_pneumonia'])
+        icu_node = MultiClassBayesNode("ICU", ["PNEUMONIA"], cpts['cpt_icu'])
+        age_node = MultiClassBayesNode("AGE_GROUP", [], cpts['cpt_age_group'])
+        obesity_node = MultiClassBayesNode("OBESITY", [], cpts['cpt_obesity_group'])
+        sex_node = MultiClassBayesNode("SEX", [], cpts['cpt_sex_group'])
+        diabetes_node = MultiClassBayesNode("DIABETES", [], cpts['cpt_diabetes_group'])
+
+        covid_bn = BayesNet([
+            age_node,
+            sex_node,
+            obesity_node,
+            diabetes_node,
+            pneumonia_node,
+            icu_node,
+            classification_node
+        ])
+    except KeyError as e:
+        st.error(f"CPT key error: {e}")
 
     # Collect user input
-    age_group = st.selectbox("Select your age group", ['<20', '20-40', '40-60', '60-80', '80+'])
-    sex = st.selectbox("Select your sex", ["Female", "Male"])
-    obesity = st.selectbox("Are you obese?", ["Yes", "No"])
+    st.write("### Please provide the following details:")
+    age_group = st.selectbox("Age Group", ["<20", "20-40", "40-60", "60-80", "80+"])
+    sex = st.selectbox("Sex", ["Female", "Male"])
+    obesity = st.selectbox("Do you have obesity?", ["Yes", "No"])
     diabetes = st.selectbox("Do you have diabetes?", ["Yes", "No"])
     pneumonia = st.selectbox("Do you have pneumonia?", ["Yes", "No"])
-    icu = st.selectbox("Have you been admitted to ICU (Intensive Care Unit)?", ["Yes", "No"])
+    icu = st.selectbox("Have you been admitted to ICU?", ["Yes", "No"])
 
-    # Encode inputs
-    sex_encoded = 1 if sex == "Female" else 2
-    obesity_encoded = 1 if obesity == "Yes" else 2
-    diabetes_encoded = 1 if diabetes == "Yes" else 2
-    pneumonia_encoded = 1 if pneumonia == "Yes" else 2
-    icu_encoded = 1 if icu == "Yes" else 2
+    # Map user input to encoded values
+    try:
+        evidence = {
+            "AGE_GROUP": age_group,
+            "SEX": 1 if sex == "Female" else 2,
+            "OBESITY": 1 if obesity == "Yes" else 2,
+            "DIABETES": 1 if diabetes == "Yes" else 2,
+            "PNEUMONIA": 1 if pneumonia == "Yes" else 2,
+            "ICU": 1 if icu == "Yes" else 2,
+        }
+    except KeyError as e:
+        st.error(f"Mapping error: {e}")
 
-    # Build evidence
-    evidence = {
-        "AGE_GROUP": age_group,
-        "SEX": sex_encoded,
-        "OBESITY": obesity_encoded,
-        "DIABETES": diabetes_encoded,
-        "PNEUMONIA": pneumonia_encoded,
-        "ICU": icu_encoded
-    }
-
-    # Define Bayesian Network
-    cpt_classification = compute_cpt(covid_data, 'CLASIFFICATION_FINAL', ['SEX', 'OBESITY', 'DIABETES', 'ICU'])
-    classification_node = MultiClassBayesNode("CLASIFFICATION_FINAL", ['SEX', 'OBESITY', 'DIABETES', 'ICU'], cpt_classification)
-    covid_bn = BayesNet([classification_node])
-
-    if st.button("Check COVID-19 Risk"):
+    if st.button("Get COVID-19 Classification"):
         try:
             result = enumeration_ask("CLASIFFICATION_FINAL", evidence, covid_bn)
             prediction = max(result.prob, key=result.prob.get)
             prediction_text = "Positive" if prediction == 1 else "Negative"
             st.success(f"Your COVID-19 classification result: {prediction_text}")
         except Exception as e:
-            st.error(f"An error occurred during inference: {e}")
+            st.error(f"An error occurred: {e}")
 
 # Breast Cancer Page
 elif st.session_state.page == "breast_cancer":
