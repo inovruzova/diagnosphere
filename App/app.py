@@ -148,8 +148,6 @@ elif st.session_state.page == "mental_health":
         "Physical_Activity_Hours": physical_activity_encoded
     }
 
-    st.write("Evidence:", evidence)
-
     # Define Bayesian Network structure using precomputed CPTs
     try:
         mental_health_node = MultiClassBayesNode("Mental_Health_Condition", ["Physical_Activity_Hours", "Gender"], cpts["cpt_mental_health"])
@@ -232,11 +230,23 @@ elif st.session_state.page == "covid_19":
     diabetes = st.selectbox("Do you have diabetes?", ["Yes", "No"])
     pneumonia = st.selectbox("Do you have pneumonia?", ["Yes", "No"])
     icu = st.selectbox("Have you been admitted to ICU?", ["Yes", "No"])
+    
+    
+    if (age_group == "<20"):
+        age_evidence = 0
+    elif (age_group == "20-40"):
+        age_evidence = 1
+    elif (age_group == "40-60"):
+        age_evidence = 2
+    elif (age_group == "60-80"):
+        age_evidence = 3
+    elif (age_group == "80+"):
+        age_evidence = 4
 
     # Map user input to encoded values
     try:
         evidence = {
-            "AGE_GROUP": age_group,
+            "AGE_GROUP": age_evidence,
             "SEX": 1 if sex == "Female" else 2,
             "OBESITY": 1 if obesity == "Yes" else 2,
             "DIABETES": 1 if diabetes == "Yes" else 2,
